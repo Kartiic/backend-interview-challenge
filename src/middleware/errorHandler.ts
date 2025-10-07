@@ -10,14 +10,16 @@ export function errorHandler(
   res: Response,
   next: NextFunction
 ): void {
-  console.error('Error:', err);
+  console.error(`[ERROR] ${err.message}`, err);
 
   const statusCode = err.statusCode || 500;
   const message = err.message || 'Internal Server Error';
 
   res.status(statusCode).json({
+    success: false,
     error: message,
-    timestamp: new Date().toISOString(),
+    statusCode,
     path: req.path,
+    timestamp: new Date().toISOString(),
   });
 }
