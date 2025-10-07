@@ -1,5 +1,4 @@
 import sqlite3 from 'sqlite3';
-import { promisify } from 'util';
 import { Task, SyncQueueItem } from '../types';
 
 const sqlite = sqlite3.verbose();
@@ -7,7 +6,7 @@ const sqlite = sqlite3.verbose();
 export class Database {
   private db: sqlite3.Database;
 
-  constructor(filename: string = ':memory:') {
+  constructor(filename: string = './data/tasks.sqlite3') {
     this.db = new sqlite.Database(filename);
   }
 
@@ -44,11 +43,22 @@ export class Database {
       )
     `;
 
+    const createDeadLetterQueue = `
+      CREATE TABLE IF NOT EXISTS dead_letter_queue (
+        id TEXT PRIMARY KEY,
+        task_id TEXT,
+        operation TEXT,
+        data TEXT,
+        error_message TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
     await this.run(createTasksTable);
     await this.run(createSyncQueueTable);
+    await this.run(createDeadLetterQueue);
   }
 
-  // Helper methods
   run(sql: string, params: any[] = []): Promise<void> {
     return new Promise((resolve, reject) => {
       this.db.run(sql, params, (err) => {
@@ -58,7 +68,7 @@ export class Database {
     });
   }
 
-  get(sql: string, params: any[] = []): Promise<any> {
+  get<T = any>(sql: string, params: any[] = []): Promise<T | undefined> {
     return new Promise((resolve, reject) => {
       this.db.get(sql, params, (err, row) => {
         if (err) reject(err);
@@ -67,7 +77,7 @@ export class Database {
     });
   }
 
-  all(sql: string, params: any[] = []): Promise<any[]> {
+  all<T = any>(sql: string, params: any[] = []): Promise<T[]> {
     return new Promise((resolve, reject) => {
       this.db.all(sql, params, (err, rows) => {
         if (err) reject(err);
