@@ -3,29 +3,22 @@ export interface Task {
   title: string;
   description?: string;
   completed: boolean;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
   is_deleted: boolean;
-  sync_status: 'pending' | 'synced' | 'error';
+  sync_status?: 'pending' | 'in-progress' | 'synced' | 'error' | 'failed';
   server_id?: string;
-  last_synced_at?: string;
+  last_synced_at?: Date;
 }
 
 export interface SyncQueueItem {
   id: string;
   task_id: string;
-  operation: 'create' | 'update' | 'delete' | 'failed';
-  data: string; // JSON serialized task data
-  created_at: string;
+  operation: 'create' | 'update' | 'delete';
+  data: Partial<Task>;
+  created_at: Date;
   retry_count: number;
   error_message?: string;
-}
-
-export interface SyncError {
-  task_id: string;
-  operation: string;
-  error: string;
-  timestamp: Date;
 }
 
 export interface SyncResult {
@@ -35,11 +28,24 @@ export interface SyncResult {
   errors: SyncError[];
 }
 
+export interface SyncError {
+  task_id: string;
+  operation: string;
+  error: string;
+  timestamp: Date;
+}
+
+export interface BatchSyncRequest {
+  items: SyncQueueItem[];
+  client_timestamp: Date;
+}
+
 export interface BatchSyncResponse {
   processed_items: {
     client_id: string;
-    server_id?: string;
+    server_id: string;
     status: 'success' | 'conflict' | 'error';
     resolved_data?: Task;
+    error?: string;
   }[];
 }
