@@ -1,20 +1,16 @@
-import sqlite3 from 'sqlite3';
-import { Task, SyncQueueItem } from '../types';
+import sqlite3 from "sqlite3";
+import { Task, SyncQueueItem } from "../types";
 
 const sqlite = sqlite3.verbose();
 
 export class Database {
   private db: sqlite3.Database;
 
-  constructor(filename: string = './data/tasks.sqlite3') {
+  constructor(filename: string = ":memory:") {
     this.db = new sqlite.Database(filename);
   }
 
   async initialize(): Promise<void> {
-    await this.createTables();
-  }
-
-  private async createTables(): Promise<void> {
     const createTasksTable = `
       CREATE TABLE IF NOT EXISTS tasks (
         id TEXT PRIMARY KEY,
@@ -29,7 +25,6 @@ export class Database {
         last_synced_at DATETIME
       )
     `;
-
     const createSyncQueueTable = `
       CREATE TABLE IF NOT EXISTS sync_queue (
         id TEXT PRIMARY KEY,
@@ -42,56 +37,31 @@ export class Database {
         FOREIGN KEY (task_id) REFERENCES tasks(id)
       )
     `;
-
-    const createDeadLetterQueue = `
-      CREATE TABLE IF NOT EXISTS dead_letter_queue (
-        id TEXT PRIMARY KEY,
-        task_id TEXT,
-        operation TEXT,
-        data TEXT,
-        error_message TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `;
-
     await this.run(createTasksTable);
     await this.run(createSyncQueueTable);
-    await this.run(createDeadLetterQueue);
   }
 
   run(sql: string, params: any[] = []): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.db.run(sql, params, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
+      this.db.run(sql, params, (err) => (err ? reject(err) : resolve()));
     });
   }
 
-  get<T = any>(sql: string, params: any[] = []): Promise<T | undefined> {
+  get(sql: string, params: any[] = []): Promise<any> {
     return new Promise((resolve, reject) => {
-      this.db.get(sql, params, (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
+      this.db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row)));
     });
   }
 
-  all<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+  all(sql: string, params: any[] = []): Promise<any[]> {
     return new Promise((resolve, reject) => {
-      this.db.all(sql, params, (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
+      this.db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows)));
     });
   }
 
   close(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.db.close((err) => {
-        if (err) reject(err);
-        else resolve();
-      });
+      this.db.close((err) => (err ? reject(err) : resolve()));
     });
   }
 }
