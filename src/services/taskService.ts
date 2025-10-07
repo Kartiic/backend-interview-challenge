@@ -1,25 +1,29 @@
-import { Database } from '../db/database';
-import { Task } from '../types';
 import { v4 as uuidv4 } from 'uuid';
+import { Task } from '../types';
+import { Database } from '../db/database';
+import { SyncService } from './syncService';
 
 export class TaskService {
-  private db: Database;
+  private syncService: SyncService;
 
-  constructor(db: Database) {
-    this.db = db;
+  constructor(private db: Database) {
+    this.syncService = new SyncService(db, this);
   }
 
+  // ✅ Create a new task
   async createTask(taskData: Partial<Task>): Promise<Task> {
     const id = uuidv4();
+    const now = new Date();
+
     const task: Task = {
       id,
       title: taskData.title || 'Untitled Task',
       description: taskData.description || '',
       completed: false,
+      created_at: now,
+      updated_at: now,
       is_deleted: false,
       sync_status: 'pending',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
     };
 
     await this.db.run(
@@ -30,53 +34,82 @@ export class TaskService {
         task.title,
         task.description,
         task.completed ? 1 : 0,
-        task.created_at,
-        task.updated_at,
-        0,
-        'pending',
+        task.created_at.toISOString(),
+        task.updated_at.toISOString(),
+        task.is_deleted ? 1 : 0,
+        task.sync_status,
       ]
     );
 
+    await this.syncService.addToSyncQueue(task.id, 'create', task);
     return task;
   }
 
-  async getAllTasks(): Promise<Task[]> {
-    const rows = await this.db.all(`SELECT * FROM tasks WHERE is_deleted = 0`);
-    return rows.map(this.mapRowToTask);
-  }
-
-  async getTaskById(id: string): Promise<Task | null> {
-    const row = await this.db.get(`SELECT * FROM tasks WHERE id = ? AND is_deleted = 0`, [id]);
-    return row ? this.mapRowToTask(row) : null;
-  }
-
+  // ✅ Update an existing task
   async updateTask(id: string, updates: Partial<Task>): Promise<Task | null> {
-    const existing = await this.getTaskById(id);
+    const existing = await this.getTask(id);
     if (!existing) return null;
 
-    const updated: Task = {
+    const updatedTask: Task = {
       ...existing,
       ...updates,
-      updated_at: new Date().toISOString(),
+      updated_at: new Date(),
       sync_status: 'pending',
     };
 
     await this.db.run(
-      `UPDATE tasks 
-       SET title = ?, description = ?, completed = ?, updated_at = ?, sync_status = ?
-       WHERE id = ?`,
-      [updated.title, updated.description, updated.completed ? 1 : 0, updated.updated_at, 'pending', id]
+      `UPDATE tasks SET title = ?, description = ?, completed = ?, updated_at = ?, sync_status = ? WHERE id = ?`,
+      [
+        updatedTask.title,
+        updatedTask.description,
+        updatedTask.completed ? 1 : 0,
+        updatedTask.updated_at.toISOString(),
+        updatedTask.sync_status,
+        id,
+      ]
     );
 
-    return updated;
+    await this.syncService.addToSyncQueue(id, 'update', updatedTask);
+    return updatedTask;
   }
 
+  // ✅ Soft delete task
   async deleteTask(id: string): Promise<boolean> {
-    const existing = await this.getTaskById(id);
+    const existing = await this.getTask(id);
     if (!existing) return false;
 
-    await this.db.run(`UPDATE tasks SET is_deleted = 1, sync_status = 'pending' WHERE id = ?`, [id]);
+    const updatedAt = new Date();
+    await this.db.run(
+      `UPDATE tasks SET is_deleted = 1, updated_at = ?, sync_status = 'pending' WHERE id = ?`,
+      [updatedAt.toISOString(), id]
+    );
+
+    await this.syncService.addToSyncQueue(id, 'delete', existing);
     return true;
+  }
+
+  // ✅ Get single task
+  async getTask(id: string): Promise<Task | null> {
+    const row = await this.db.get(`SELECT * FROM tasks WHERE id = ?`, [id]);
+    if (!row || row.is_deleted) return null;
+
+    return this.mapRowToTask(row);
+  }
+
+  // ✅ Get all active tasks
+  async getAllTasks(): Promise<Task[]> {
+    const rows = await this.db.all(
+      `SELECT * FROM tasks WHERE is_deleted = 0 ORDER BY updated_at DESC`
+    );
+    return rows.map(this.mapRowToTask);
+  }
+
+  // ✅ Tasks pending sync
+  async getTasksNeedingSync(): Promise<Task[]> {
+    const rows = await this.db.all(
+      `SELECT * FROM tasks WHERE sync_status IN ('pending', 'error')`
+    );
+    return rows.map(this.mapRowToTask);
   }
 
   private mapRowToTask(row: any): Task {
@@ -85,12 +118,12 @@ export class TaskService {
       title: row.title,
       description: row.description,
       completed: !!row.completed,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
+      created_at: new Date(row.created_at),
+      updated_at: new Date(row.updated_at),
       is_deleted: !!row.is_deleted,
       sync_status: row.sync_status,
       server_id: row.server_id,
-      last_synced_at: row.last_synced_at,
+      last_synced_at: row.last_synced_at ? new Date(row.last_synced_at) : undefined,
     };
   }
 }
