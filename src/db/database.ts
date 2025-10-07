@@ -1,12 +1,11 @@
-import sqlite3 from "sqlite3";
-import { Task, SyncQueueItem } from "../types";
+import sqlite3 from 'sqlite3';
 
 const sqlite = sqlite3.verbose();
 
 export class Database {
   private db: sqlite3.Database;
 
-  constructor(filename: string = ":memory:") {
+  constructor(filename: string = './data/tasks.sqlite3') {
     this.db = new sqlite.Database(filename);
   }
 
@@ -25,6 +24,7 @@ export class Database {
         last_synced_at DATETIME
       )
     `;
+
     const createSyncQueueTable = `
       CREATE TABLE IF NOT EXISTS sync_queue (
         id TEXT PRIMARY KEY,
@@ -33,17 +33,17 @@ export class Database {
         data TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         retry_count INTEGER DEFAULT 0,
-        error_message TEXT,
-        FOREIGN KEY (task_id) REFERENCES tasks(id)
+        error_message TEXT
       )
     `;
+
     await this.run(createTasksTable);
     await this.run(createSyncQueueTable);
   }
 
   run(sql: string, params: any[] = []): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.db.run(sql, params, (err) => (err ? reject(err) : resolve()));
+      this.db.run(sql, params, err => (err ? reject(err) : resolve()));
     });
   }
 
@@ -61,7 +61,7 @@ export class Database {
 
   close(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.db.close((err) => (err ? reject(err) : resolve()));
+      this.db.close(err => (err ? reject(err) : resolve()));
     });
   }
 }
